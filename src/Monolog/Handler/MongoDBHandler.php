@@ -28,14 +28,20 @@ use Monolog\Formatter\NormalizerFormatter;
 class MongoDBHandler extends AbstractProcessingHandler
 {
     protected $mongoCollection;
+    protected $namespace;
+    protected $manager;
 
     public function __construct($mongo, $database, $collection, $level = Logger::DEBUG, $bubble = true)
     {
-        if (!($mongo instanceof \MongoClient || $mongo instanceof \Mongo || $mongo instanceof \MongoDB\Client)) {
+        if (!($mongo instanceof \MongoClient || $mongo instanceof \Mongo || $mongo instanceof \MongoDB\Client || $mongo instanceof \MongoDB\Driver\Manager)) {
             throw new \InvalidArgumentException('MongoClient, Mongo or MongoDB\Client instance required');
         }
-
-        $this->mongoCollection = $mongo->selectCollection($database, $collection);
+        $this->namespace = "$database.$collection";
+        if($mongo instanceof \MongoDB\Driver\Manger) {
+            $this->manager = $mongo;
+        } else {
+            $this->mongoCollection = $mongo->selectCollection($database, $collection);
+        }
 
         parent::__construct($level, $bubble);
     }
@@ -44,8 +50,12 @@ class MongoDBHandler extends AbstractProcessingHandler
     {
         if ($this->mongoCollection instanceof \MongoDB\Collection) {
             $this->mongoCollection->insertOne($record["formatted"]);
+        } elseif (null !== $this->manager) {
+	        $bulk = new \MongoDB\Driver\BulkWrite();
+	        $bulk->insert($record["formatted"]);
+	        $this->manager->executeBulkWrite($this->namespace, $bulk);
         } else {
-            $this->mongoCollection->save($record["formatted"]);
+            $this->mongoCollection->insert($record["formatted"]);
         }
     }
 
